@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI角色互動動態狀態欄生成器 (AI Character Status HUD Builder)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0f9ff', 500: '#06b6d4', 600: '#0891b2', 900: '#0f172a' }
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans TC', 'Inter', 'sans-serif'],
+                        mono: ['Courier New', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts: Noto Sans TC -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2canvas for PNG Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
+
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+        @keyframes pulse-glow { 
+            0%, 100% { filter: drop-shadow(0 0 4px var(--glow-color, rgba(56,189,248,0.5))); } 
+            50% { filter: drop-shadow(0 0 18px var(--glow-color, rgba(56,189,248,0.95))); } 
+        }
+        @keyframes wave-flow { 0% { background-position: 0 0; } 100% { background-position: 40px 0; } }
+        @keyframes glitch-anim {
+            0% { transform: translate(0); }
+            20% { transform: translate(-4px, 3px) rotate(0.5deg); }
+            40% { transform: translate(-3px, -3px) rotate(-0.5deg); }
+            60% { transform: translate(4px, 2px); }
+            80% { transform: translate(2px, -3px); }
+            100% { transform: translate(0); }
+        }
+        @keyframes heartbeat-anim {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px #f43f5e); }
+            14% { transform: scale(1.03); filter: drop-shadow(0 0 16px #f43f5e); }
+            28% { transform: scale(1); filter: drop-shadow(0 0 4px #f43f5e); }
+            42% { transform: scale(1.04); filter: drop-shadow(0 0 20px #f43f5e); }
+            70% { transform: scale(1); }
+        }
+        @keyframes float-up-fade {
+            0% { opacity: 1; transform: translateY(0) scale(0.8) rotate(0deg); }
+            50% { opacity: 0.9; transform: translateY(-40px) scale(1.25) rotate(15deg); }
+            100% { opacity: 0; transform: translateY(-80px) scale(0.5) rotate(-15deg); }
+        }
+        @keyframes coin-bounce {
+            0% { opacity: 1; transform: translateY(0) scale(0.8); }
+            50% { opacity: 1; transform: translateY(-50px) scale(1.3) rotateY(180deg); }
+            100% { opacity: 0; transform: translateY(-20px) scale(0.9) rotateY(360deg); }
+        }
+        @keyframes speech-pop {
+            0% { opacity: 0; transform: scale(0.5) translateY(10px); }
+            70% { transform: scale(1.05) translateY(-5px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .anim-pulse { animation: pulse-glow 2s infinite ease-in-out; }
+        .anim-glitch { animation: glitch-anim 0.22s ease infinite; }
+        .anim-heartbeat { animation: heartbeat-anim 1.2s infinite ease-in-out; }
+
+        .fx-burst-particle {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            animation: float-up-fade 1.2s forwards ease-out;
+            font-size: 1.5rem;
+        }
+        .fx-coin-particle {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            animation: coin-bounce 0.9s forwards ease-out;
+            font-size: 1.6rem;
+        }
+
+        .speech-bubble {
+            animation: speech-pop 0.3s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .liquid-bar {
+            background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.18), rgba(255,255,255,0.18) 10px, transparent 10px, transparent 20px);
+            background-size: 40px 40px;
+            animation: wave-flow 1.8s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+    <!-- 頂部導航列 (Top Navbar) -->
+    <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-50 backdrop-blur-md px-4 py-3 flex items-center justify-between shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20">
+                <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
+                    AI角色互動動態狀態欄生成器
+                </h1>
+                <p class="text-xs text-slate-400 hidden sm:block">繁體中文版 • 飾品圖片轉像素 • 8-bit 音效與對話泡泡 • 全自訂色彩</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <button onclick="applyPreset('cyberpunk')" class="px-2.5 py-1.5 text-xs bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 text-cyan-300 rounded-lg transition flex items-center gap-1.5">
+                <i class="fa-solid fa-palette text-cyan-400"></i> 主題預設
+            </button>
+            <button onclick="openExportModal()" class="px-3 py-1.5 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium rounded-lg shadow-md shadow-cyan-500/20 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-code"></i> 匯出 HTML 語法
+            </button>
+        </div>
+    </header>
+
+    <!-- 主工作區：雙欄架構 -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-hidden">
+
+        <!-- 左側：編輯控制面板 (5 欄) -->
+        <div class="lg:col-span-5 border-r border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-57px)] overflow-hidden">
+            
+            <!-- 分頁切換 Tab -->
+            <div class="flex border-b border-slate-800 bg-slate-950 overflow-x-auto text-xs scrollbar-none">
+                <button onclick="switchTab('hierarchy')" id="tab-hierarchy" class="tab-btn px-3.5 py-3 font-medium border-b-2 border-cyan-500 text-cyan-400 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-folder-tree"></i> 標題與欄位
+                </button>
+                <button onclick="switchTab('colors')" id="tab-colors" class="tab-btn px-3.5 py-3 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-palette"></i> 全色彩調配
+                </button>
+                <button onclick="switchTab('pixel')" id="tab-pixel" class="tab-btn px-3.5 py-3 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-image"></i> 頭像像素化
+                </button>
+                <button onclick="switchTab('decor')" id="tab-decor" class="tab-btn px-3.5 py-3 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-gem"></i> 飾品/邊框轉像素
+                </button>
+                <button onclick="switchTab('export')" id="tab-export" class="tab-btn px-3.5 py-3 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-robot"></i> AI 指令匯出
+                </button>
+            </div>
+
+            <!-- 分頁面板容器 -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+                <!-- 1. 自由標題與欄位層級 (HIERARCHY) -->
+                <div id="panel-hierarchy" class="tab-panel space-y-5">
+                    
+                    <!-- 角色資料 -->
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-cyan-400 flex justify-between items-center">
+                            <span>角色基本設定</span>
+                            <i class="fa-solid fa-id-card"></i>
+                        </label>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <label class="text-slate-400 block mb-1">角色名稱 {{char}}</label>
+                                <input type="text" id="input-char-name" value="愛莉絲 (Alice)" oninput="hudData.charName=this.value; renderHUDPreview();" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">稱號 / 等級</label>
+                                <input type="text" id="input-char-title" value="Lv. 24 魔法使" oninput="hudData.charTitle=this.value; renderHUDPreview();" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="text-slate-400 block mb-1">狀態頭銜 / 對話獨白</label>
+                                <input type="text" id="input-char-quote" value='"哼，別以為這樣我就會原諒你！"' oninput="hudData.charQuote=this.value; renderHUDPreview();" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 新增大標題與欄位按鈕 -->
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">階層分組控制</label>
+                        <button onclick="addSectionHeader()" class="w-full p-2.5 bg-gradient-to-r from-cyan-950 to-indigo-950 hover:from-cyan-900 hover:to-indigo-900 border border-cyan-800/80 rounded-lg text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 shadow">
+                            <i class="fa-solid fa-folder-plus text-cyan-400"></i> 新增大標題 / 分組區塊
+                        </button>
+                    </div>
+
+                    <!-- 階層欄位編輯列表 -->
+                    <div id="hierarchy-editor-container" class="space-y-4">
+                        <!-- Dynamic Sections -->
+                    </div>
+                </div>
+
+                <!-- 2. 全色彩與風格調整 (COLORS) -->
+                <div id="panel-colors" class="tab-panel space-y-5 hidden">
+                    
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">主題風格範本</label>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <button onclick="applyPreset('xianxia')" class="p-2.5 rounded-lg border border-amber-900/50 bg-amber-950/20 hover:bg-amber-900/40 text-left">
+                                <div class="text-xs font-bold text-amber-300">🌸 古風仙俠</div>
+                                <div class="text-[10px] text-amber-500/70">水墨流金風格</div>
+                            </button>
+                            <button onclick="applyPreset('cyberpunk')" class="p-2.5 rounded-lg border border-cyan-900/50 bg-cyan-950/20 hover:bg-cyan-900/40 text-left">
+                                <div class="text-xs font-bold text-cyan-300">🌌 賽博科技</div>
+                                <div class="text-[10px] text-cyan-500/70">霓虹戰鬥 HUD</div>
+                            </button>
+                            <button onclick="applyPreset('otome')" class="p-2.5 rounded-lg border border-yellow-900/50 bg-yellow-950/20 hover:bg-yellow-900/40 text-left">
+                                <div class="text-xs font-bold text-yellow-300">🏰 城堡乙女</div>
+                                <div class="text-[10px] text-yellow-500/70">華麗宮廷金邊</div>
+                            </button>
+                            <button onclick="applyPreset('anime')" class="p-2.5 rounded-lg border border-pink-900/50 bg-pink-950/20 hover:bg-pink-900/40 text-left">
+                                <div class="text-xs font-bold text-pink-300">🎀 萌系夢幻</div>
+                                <div class="text-[10px] text-pink-500/70">粉紅少女心</div>
+                            </button>
+                            <button onclick="applyPreset('gothic')" class="p-2.5 rounded-lg border border-purple-900/50 bg-purple-950/20 hover:bg-purple-900/40 text-left">
+                                <div class="text-xs font-bold text-purple-300">🖤 哥特暗黑</div>
+                                <div class="text-[10px] text-purple-500/70">詛咒紫光氣場</div>
+                            </button>
+                            <button onclick="applyPreset('glass')" class="p-2.5 rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-700/50 text-left">
+                                <div class="text-xs font-bold text-slate-200">🧊 現代玻纖</div>
+                                <div class="text-[10px] text-slate-400">極簡毛玻璃</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 細節調色盤 -->
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 flex justify-between items-center">
+                            <span>全面板細節色彩控制器</span>
+                            <i class="fa-solid fa-palette text-cyan-400"></i>
+                        </label>
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                                <label class="text-slate-400 block mb-1">背景底色 (Bg Color)</label>
+                                <input type="color" id="clr-bg" value="#0f172a" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">內文文字 (Text Color)</label>
+                                <input type="color" id="clr-text" value="#f8fafc" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">大標題色彩 (Header Text)</label>
+                                <input type="color" id="clr-section-title" value="#38bdf8" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">小標題色彩 (Sub Title)</label>
+                                <input type="color" id="clr-sub-title" value="#94a3b8" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">進度條填充色 (Progress Fill)</label>
+                                <input type="color" id="clr-progress" value="#06b6d4" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">邊框與發光色 (Border Glow)</label>
+                                <input type="color" id="clr-border" value="#0284c7" onchange="updateHUDStyle()" class="w-full h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer">
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-slate-800 space-y-2">
+                            <div>
+                                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                                    <span>卡片背景透明度</span>
+                                    <span id="val-bg-opacity">85%</span>
+                                </div>
+                                <input type="range" id="slider-bg-opacity" min="0" max="100" value="85" oninput="updateHUDStyle()" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded">
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                                    <span>毛玻璃模糊強度 (Glass Blur)</span>
+                                    <span id="val-blur">12px</span>
+                                </div>
+                                <input type="range" id="slider-blur" min="0" max="25" value="12" oninput="updateHUDStyle()" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 頭像圖片轉像素 ENGINE (AVATAR PIXEL) -->
+                <div id="panel-pixel" class="tab-panel space-y-5 hidden">
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-4">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 flex justify-between items-center">
+                            <span>頭像圖片轉像素畫處理器</span>
+                            <i class="fa-solid fa-gamepad text-emerald-400"></i>
+                        </label>
+
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">上傳角色頭像</label>
+                            <input type="file" accept="image/*" onchange="processAvatarPixel(event)" class="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-950 file:text-cyan-300 hover:file:bg-cyan-900 cursor-pointer">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">網格解析度</label>
+                                <select id="avatar-pixel-res" onchange="renderAvatarPixel()" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200">
+                                    <option value="none">原圖 (不像素化)</option>
+                                    <option value="128">128 x 128 (高清)</option>
+                                    <option value="64" selected>64 x 64 (經典 RPG)</option>
+                                    <option value="32">32 x 32 (復古 Arcade)</option>
+                                    <option value="16">16 x 16 (8-bit 圖示)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">調色盤限制</label>
+                                <select id="avatar-palette" onchange="renderAvatarPixel()" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200">
+                                    <option value="full">全彩 (TrueColor)</option>
+                                    <option value="gameboy">Game Boy (4色綠調)</option>
+                                    <option value="cyberpunk">賽博霓虹 16色</option>
+                                    <option value="nes">NES 任天堂 54色</option>
+                                    <option value="pico8">PICO-8 奇幻主機</option>
+                                    <option value="bw">黑白單色</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. 飾品與邊框轉像素轉換器 (DECORATION & ACCESSORY PIXELIZER) -->
+                <div id="panel-decor" class="tab-panel space-y-5 hidden">
+                    
+                    <!-- 預設飾品框 -->
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">預設外框飾品</label>
+                        <select id="frame-preset" onchange="hudData.frame=this.value; renderFrameOverlay();" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200">
+                            <option value="none">無邊框 (極簡風格)</option>
+                            <option value="cyberpunk" selected>賽博霓虹科技角邊</option>
+                            <option value="rpg-gold">奇幻宮廷金邊紋飾</option>
+                            <option value="gothic-wings">哥特暗黑翼紋</option>
+                            <option value="anime-lace">日系動漫蕾絲點綴</option>
+                            <option value="pixel-hearts">像素愛心角標</option>
+                        </select>
+                    </div>
+
+                    <!-- 自訂飾品圖片轉像素轉換區 (UPGRADED FEATURE) -->
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-4">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-wand-magic"></i> 飾品圖片轉像素與管理
+                            </label>
+                            <button onclick="addAccessoryItem()" class="px-2 py-1 text-xs bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 rounded flex items-center gap-1">
+                                <i class="fa-solid fa-plus"></i> 新增圖標飾品
+                            </button>
+                        </div>
+
+                        <!-- 飾品上傳轉像素工具卡片 -->
+                        <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg space-y-3">
+                            <label class="block text-[11px] text-slate-300 font-bold">上傳 PNG 圖片轉為像素飾品/貼紙</label>
+                            <input type="file" accept="image/*" onchange="processAccessoryImagePixel(event)" class="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:bg-indigo-950 file:text-indigo-300 hover:file:bg-indigo-900 cursor-pointer">
+                            
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="text-[10px] text-slate-500 block mb-1">飾品像素網格</label>
+                                    <select id="acc-pixel-res" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200">
+                                        <option value="32" selected>32 x 32 (標準飾品)</option>
+                                        <option value="16">16 x 16 (精細點陣)</option>
+                                        <option value="64">64 x 64 (大圖貼紙)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-slate-500 block mb-1">飾品調色盤</label>
+                                    <select id="acc-pixel-palette" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200">
+                                        <option value="full">全彩原色</option>
+                                        <option value="cyberpunk">賽博霓虹</option>
+                                        <option value="pico8">PICO-8 復古</option>
+                                        <option value="gameboy">Game Boy 4色</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 飾品圖層列表 -->
+                        <div id="accessories-list" class="space-y-3">
+                            <!-- Rendered Accessories Editor -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. AI 提示詞匯出 (EXPORTS) -->
+                <div id="panel-export" class="tab-panel space-y-5 hidden">
+                    <div class="border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center justify-between">
+                            <span>SillyTavern / 酒館 AI 系統提示詞</span>
+                            <i class="fa-solid fa-robot"></i>
+                        </label>
+                        <p class="text-xs text-slate-400">複製此 Prompt 貼入角色卡 System Prompt，AI 將會在每輪對話末尾自動回傳更新後的 JSON 狀態欄：</p>
+                        <textarea id="ai-system-prompt" readonly class="w-full h-40 bg-slate-900 border border-slate-700 rounded p-2 text-xs font-mono text-cyan-300 focus:outline-none scrollbar-thin"></textarea>
+                        <button onclick="copyToClipboard('ai-system-prompt')" class="w-full py-1.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 text-cyan-300 rounded text-xs font-medium transition">
+                            <i class="fa-solid fa-copy"></i> 複製 AI 系統提示詞
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 右側：即時預覽與動態互動畫布 (7 欄) -->
+        <div class="lg:col-span-7 bg-slate-950 p-4 sm:p-8 flex flex-col justify-between items-center relative overflow-y-auto">
+            
+            <!-- 上方控制面板 -->
+            <div class="w-full max-w-xl flex flex-wrap items-center justify-between gap-2 mb-6 bg-slate-900/80 border border-slate-800 p-2.5 rounded-xl backdrop-blur">
+                <div class="flex items-center space-x-1.5 text-xs">
+                    <span class="text-slate-400 font-medium">懸停/狀態氣場測試:</span>
+                    <select id="state-trigger" onchange="triggerReactiveState(this.value)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 font-medium text-xs focus:ring-1 focus:ring-cyan-500">
+                        <option value="normal">常態 (Normal)</option>
+                        <option value="low-hp">低血量心跳 (Low HP Heartbeat)</option>
+                        <option value="love-burst">好感滿溢 (Love Overflow)</option>
+                        <option value="rage">狂暴火焰 (Rage Flame)</option>
+                        <option value="glitch">故障干擾 (Glitch Distort)</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button onclick="downloadPNG()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded text-xs flex items-center gap-1 transition">
+                        <i class="fa-solid fa-camera text-cyan-400"></i> 下載 PNG 截圖
+                    </button>
+                    <button onclick="openExportModal()" class="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs flex items-center gap-1 font-medium transition shadow">
+                        <i class="fa-solid fa-code"></i> 匯出 HTML 語法
+                    </button>
+                </div>
+            </div>
+
+            <!-- 即時 HUD 卡片畫布 -->
+            <div id="hud-preview-wrapper" class="w-full max-w-lg transition-all duration-300 relative py-4">
+                
+                <!-- 對話泡泡 (Speech Bubble Overlay) -->
+                <div id="hud-speech-bubble" class="hidden absolute -top-8 left-12 right-12 z-40 bg-slate-900/95 border border-cyan-400 text-cyan-200 p-2.5 rounded-2xl shadow-xl text-xs font-medium speech-bubble text-center backdrop-blur">
+                    <span id="hud-speech-text">「點擊我有特別的對話與語音喔！」</span>
+                    <div class="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-slate-900"></div>
+                </div>
+
+                <div id="hud-card" class="relative rounded-2xl border p-5 shadow-2xl transition-all duration-300 overflow-hidden" style="background-color: rgba(15, 23, 42, 0.85); border-color: #0284c7; color: #f8fafc; backdrop-filter: blur(12px);">
+                    
+                    <!-- 外框覆蓋層 -->
+                    <div id="hud-frame-overlay" class="absolute inset-0 pointer-events-none border-2 border-transparent rounded-2xl"></div>
+
+                    <!-- 動態像素飾品覆蓋層 -->
+                    <div id="hud-accessories-layer" class="absolute inset-0 pointer-events-none overflow-hidden z-20"></div>
+
+                    <!-- 角色頭部 -->
+                    <div class="flex items-center space-x-4 relative z-10 border-b pb-3" style="border-color: rgba(255,255,255,0.1);">
+                        <div class="relative shrink-0 cursor-pointer" onclick="triggerSpeechBubble('點擊頭像觸發語音特效！')">
+                            <img id="hud-avatar-img" src="https://placehold.co/128x128/0891b2/ffffff?text=Sprite" alt="Avatar" class="w-16 h-16 object-cover border-2 border-cyan-400 shadow-md rounded-xl transition-all hover:scale-105">
+                            <span id="hud-status-dot" class="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-900 rounded-full"></span>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between">
+                                <h2 id="hud-char-name" class="font-bold text-lg leading-tight truncate tracking-wide" style="color: #38bdf8;">愛莉絲 (Alice)</h2>
+                                <span id="hud-char-title" class="text-[11px] px-2 py-0.5 rounded-full border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono">Lv. 24 魔法使</span>
+                            </div>
+                            <p id="hud-char-quote" class="text-xs opacity-80 italic mt-1 truncate">"哼，別以為這樣我就會原諒你！"</p>
+                        </div>
+                    </div>
+
+                    <!-- 大標題與小標題動態渲染區塊 -->
+                    <div id="hud-sections-container" class="mt-4 space-y-4 relative z-10">
+                        <!-- Dynamic Sections Rendered Here -->
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="mt-6 text-center text-xs text-slate-500 max-w-md">
+                <p><i class="fa-solid fa-hand-pointer text-cyan-400 mr-1"></i> 點擊欄位可觸發「愛心爆發、花瓣飄落、金幣跳躍與 8-bit 音效」等豐富互動！</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- 匯出 HTML Modal -->
+    <div id="export-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-base text-cyan-300 flex items-center gap-2">
+                    <i class="fa-solid fa-code"></i> 單一 HTML 互動嵌入碼
+                </h3>
+                <button onclick="closeExportModal()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="text-xs text-slate-400">
+                此 HTML 程式碼已內建 Web Audio API 音效與全點擊互動粒子，無需任何外部框架即可運作：
+            </p>
+
+            <textarea id="export-code-area" readonly class="w-full h-64 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-emerald-400 focus:outline-none scrollbar-thin"></textarea>
+
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeExportModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl">關閉</button>
+                <button onclick="copyToClipboard('export-code-area')" class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-copy mr-1"></i> 複製 HTML 程式碼
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="proc-canvas" class="hidden"></canvas>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        /* 全域資料結構 */
+        let hudData = {
+            charName: "愛莉絲 (Alice)",
+            charTitle: "Lv. 24 魔法使",
+            charQuote: '"哼，別以為這樣我就會原諒你！"',
+            avatarUrl: "https://placehold.co/128x128/0891b2/ffffff?text=Sprite",
+            styles: {
+                bg: "#0f172a",
+                text: "#f8fafc",
+                sectionTitle: "#38bdf8",
+                subTitle: "#94a3b8",
+                progress: "#06b6d4",
+                border: "#0284c7",
+                bgOpacity: 85,
+                blur: 12
+            },
+            frame: "cyberpunk",
+            accessories: [
+                { id: "acc-1", icon: "❤️", imgUrl: null, x: 90, y: -5 }
+            ],
+            sections: [
+                {
+                    id: "sec-1",
+                    title: "基礎屬性",
+                    isCollapsed: false,
+                    fields: [
+                        { id: "f1", type: "progress", label: "生命值 (HP)", val: 92, max: 100, triggerFX: "sparkle" },
+                        { id: "f2", type: "progress", label: "魔力值 (MP)", val: 45, max: 100, triggerFX: "lightning" }
+                    ]
+                },
+                {
+                    id: "sec-2",
+                    title: "好感與關係",
+                    isCollapsed: false,
+                    fields: [
+                        { id: "f3", type: "progress", label: "好感度 {{favorability}}", val: 88, max: 100, triggerFX: "heart" },
+                        { id: "f4", type: "hearts", label: "心動評級", val: 4, max: 5, triggerFX: "heart" }
+                    ]
+                },
+                {
+                    id: "sec-3",
+                    title: "狀態與對話",
+                    isCollapsed: false,
+                    fields: [
+                        { id: "f5", type: "text", label: "當前心情 {{mood}}", val: "傲嬌羞澀", triggerFX: "petal" },
+                        { id: "f6", type: "text", label: "金幣資產 {{gold}}", val: "1,250 G", triggerFX: "coin" },
+                        { id: "f7", type: "foldable", label: "內心獨白 {{mindset}}", val: "雖然嘴上很強硬，但心裡其實很期待你今天邀請她去文具店...", triggerFX: "speech", quote: "才...才不是想跟你約會呢！", isExpanded: false }
+                    ]
+                }
+            ]
+        };
+
+        let rawAvatarImg = new Image();
+        rawAvatarImg.crossOrigin = "anonymous";
+        rawAvatarImg.src = hudData.avatarUrl;
+
+        // Web Audio API 8-bit 音效合成器
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function play8BitSFX(type) {
+            try {
+                if (!audioCtx) audioCtx = new AudioCtx();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                const now = audioCtx.currentTime;
+                if (type === 'coin') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(987.77, now);
+                    osc.frequency.setValueAtTime(1318.51, now + 0.08);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'heart') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.exponentialRampToValueAtTime(880, now + 0.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (type === 'sparkle') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(1046.50, now);
+                    osc.frequency.setValueAtTime(1567.98, now + 0.05);
+                    osc.frequency.setValueAtTime(2093.00, now + 0.1);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                }
+            } catch (e) { console.log(e); }
+        }
+
+        window.onload = function() {
+            renderHierarchyEditor();
+            renderAccessoriesEditor();
+            updateHUDStyle();
+            renderHUDPreview();
+            generateAISystemPrompt();
+        };
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-cyan-500', 'text-cyan-400');
+                btn.classList.add('border-transparent', 'text-slate-400');
+            });
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+
+            document.getElementById(`tab-${tabId}`).classList.add('border-cyan-500', 'text-cyan-400');
+            document.getElementById(`tab-${tabId}`).classList.remove('border-transparent', 'text-slate-400');
+            document.getElementById(`panel-${tabId}`).classList.remove('hidden');
+        }
+
+        function updateHUDStyle() {
+            hudData.styles.bg = document.getElementById('clr-bg').value;
+            hudData.styles.text = document.getElementById('clr-text').value;
+            hudData.styles.sectionTitle = document.getElementById('clr-section-title').value;
+            hudData.styles.subTitle = document.getElementById('clr-sub-title').value;
+            hudData.styles.progress = document.getElementById('clr-progress').value;
+            hudData.styles.border = document.getElementById('clr-border').value;
+            hudData.styles.bgOpacity = document.getElementById('slider-bg-opacity').value;
+            hudData.styles.blur = document.getElementById('slider-blur').value;
+
+            document.getElementById('val-bg-opacity').innerText = `${hudData.styles.bgOpacity}%`;
+            document.getElementById('val-blur').innerText = `${hudData.styles.blur}px`;
+
+            const card = document.getElementById('hud-card');
+            card.style.backgroundColor = hexToRgba(hudData.styles.bg, hudData.styles.bgOpacity / 100);
+            card.style.borderColor = hudData.styles.border;
+            card.style.color = hudData.styles.text;
+            card.style.backdropFilter = `blur(${hudData.styles.blur}px)`;
+
+            renderHUDPreview();
+        }
+
+        function hexToRgba(hex, alpha) {
+            let c = hex.replace('#', '');
+            if (c.length === 3) c = c.split('').map(x => x + x).join('');
+            const num = parseInt(c, 16);
+            return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+        }
+
+        function applyPreset(theme) {
+            if (theme === 'cyberpunk') {
+                document.getElementById('clr-bg').value = '#090d16';
+                document.getElementById('clr-text').value = '#00f0ff';
+                document.getElementById('clr-section-title').value = '#ff0055';
+                document.getElementById('clr-sub-title').value = '#00f0ff';
+                document.getElementById('clr-progress').value = '#ff0055';
+                document.getElementById('clr-border').value = '#00f0ff';
+                hudData.frame = 'cyberpunk';
+            } else if (theme === 'xianxia') {
+                document.getElementById('clr-bg').value = '#1c1917';
+                document.getElementById('clr-text').value = '#fef3c7';
+                document.getElementById('clr-section-title').value = '#f59e0b';
+                document.getElementById('clr-sub-title').value = '#d97706';
+                document.getElementById('clr-progress').value = '#d97706';
+                document.getElementById('clr-border').value = '#78350f';
+                hudData.frame = 'rpg-gold';
+            } else if (theme === 'anime') {
+                document.getElementById('clr-bg').value = '#2a1b28';
+                document.getElementById('clr-text').value = '#fce7f3';
+                document.getElementById('clr-section-title').value = '#f472b6';
+                document.getElementById('clr-sub-title').value = '#ec4899';
+                document.getElementById('clr-progress').value = '#fb7185';
+                document.getElementById('clr-border').value = '#ec4899';
+                hudData.frame = 'anime-lace';
+            } else if (theme === 'gothic') {
+                document.getElementById('clr-bg').value = '#0f0914';
+                document.getElementById('clr-text').value = '#e9d5ff';
+                document.getElementById('clr-section-title').value = '#c084fc';
+                document.getElementById('clr-sub-title').value = '#a855f7';
+                document.getElementById('clr-progress').value = '#9333ea';
+                document.getElementById('clr-border').value = '#581c87';
+                hudData.frame = 'gothic-wings';
+            } else if (theme === 'glass') {
+                document.getElementById('clr-bg').value = '#0f172a';
+                document.getElementById('clr-text').value = '#ffffff';
+                document.getElementById('clr-section-title').value = '#38bdf8';
+                document.getElementById('clr-sub-title').value = '#94a3b8';
+                document.getElementById('clr-progress').value = '#0284c7';
+                document.getElementById('clr-border').value = '#334155';
+                hudData.frame = 'none';
+            }
+            document.getElementById('frame-preset').value = hudData.frame;
+            updateHUDStyle();
+        }
+
+        /* 自由大標題與小欄位邏輯 */
+        function addSectionHeader() {
+            hudData.sections.push({
+                id: `sec-${Date.now()}`,
+                title: "新大標題 / 分組區塊",
+                isCollapsed: false,
+                fields: []
+            });
+            renderHierarchyEditor();
+            renderHUDPreview();
+        }
+
+        function removeSection(secIdx) {
+            hudData.sections.splice(secIdx, 1);
+            renderHierarchyEditor();
+            renderHUDPreview();
+        }
+
+        function addFieldToSection(secIdx, type) {
+            const newId = `f-${Date.now()}`;
+            if (type === 'progress') {
+                hudData.sections[secIdx].fields.push({ id: newId, type: 'progress', label: '新進度條小標題', val: 50, max: 100, triggerFX: 'sparkle' });
+            } else if (type === 'hearts') {
+                hudData.sections[secIdx].fields.push({ id: newId, type: 'hearts', label: '心動評級', val: 3, max: 5, triggerFX: 'heart' });
+            } else if (type === 'text') {
+                hudData.sections[secIdx].fields.push({ id: newId, type: 'text', label: '狀態文字', val: '正常', triggerFX: 'petal' });
+            } else if (type === 'foldable') {
+                hudData.sections[secIdx].fields.push({ id: newId, type: 'foldable', label: '折疊隱藏文字', val: '秘密詳情...', triggerFX: 'speech', quote: '點擊觸發對話！', isExpanded: false });
+            }
+            renderHierarchyEditor();
+            renderHUDPreview();
+        }
+
+        function removeFieldFromSection(secIdx, fieldIdx) {
+            hudData.sections[secIdx].fields.splice(fieldIdx, 1);
+            renderHierarchyEditor();
+            renderHUDPreview();
+        }
+
+        function renderHierarchyEditor() {
+            const container = document.getElementById('hierarchy-editor-container');
+            container.innerHTML = '';
+
+            hudData.sections.forEach((sec, secIdx) => {
+                const secBlock = document.createElement('div');
+                secBlock.className = "border border-slate-800 bg-slate-900/80 rounded-xl p-3.5 space-y-3";
+                
+                let fieldsHtml = '';
+                sec.fields.forEach((field, fIdx) => {
+                    fieldsHtml += `
+                        <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 space-y-2 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-400 capitalize">${field.type} 欄位</span>
+                                <button onclick="removeFieldFromSection(${secIdx}, ${fIdx})" class="text-rose-400 hover:text-rose-300"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-[10px] text-slate-500">小標題 / 屬性名稱</label>
+                                    <input type="text" value="${field.label}" oninput="hudData.sections[${secIdx}].fields[${fIdx}].label=this.value; renderHUDPreview();" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-slate-500">點擊觸發互動特效</label>
+                                    <select onchange="hudData.sections[${secIdx}].fields[${fIdx}].triggerFX=this.value;" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                                        <option value="none" ${field.triggerFX==='none'?'selected':''}>無</option>
+                                        <option value="heart" ${field.triggerFX==='heart'?'selected':''}>❤️ 愛心爆發</option>
+                                        <option value="sparkle" ${field.triggerFX==='sparkle'?'selected':''}>✨ 星光噴發</option>
+                                        <option value="petal" ${field.triggerFX==='petal'?'selected':''}>🌸 花瓣飄落</option>
+                                        <option value="coin" ${field.triggerFX==='coin'?'selected':''}>🪙 金幣跳躍</option>
+                                        <option value="lightning" ${field.triggerFX==='lightning'?'selected':''}>⚡ 電光閃爍</option>
+                                        <option value="speech" ${field.triggerFX==='speech'?'selected':''}>💬 對話氣泡</option>
+                                    </select>
+                                </div>
+                            </div>
+                            ${field.type === 'progress' ? `
+                                <div class="flex items-center space-x-2">
+                                    <input type="range" min="0" max="${field.max}" value="${field.val}" oninput="hudData.sections[${secIdx}].fields[${fIdx}].val=parseInt(this.value); renderHUDPreview();" class="w-full accent-cyan-500">
+                                    <span class="text-slate-400 font-mono text-[11px]">${field.val}/${field.max}</span>
+                                </div>
+                            ` : ''}
+                            ${field.type === 'text' || field.type === 'foldable' ? `
+                                <div>
+                                    <label class="text-[10px] text-slate-500">欄位數值 / 內容</label>
+                                    <input type="text" value="${field.val}" oninput="hudData.sections[${secIdx}].fields[${fIdx}].val=this.value; renderHUDPreview();" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+
+                secBlock.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                        <div class="flex items-center gap-2 flex-1">
+                            <i class="fa-solid fa-folder-open text-cyan-400"></i>
+                            <input type="text" value="${sec.title}" oninput="hudData.sections[${secIdx}].title=this.value; renderHUDPreview();" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs font-bold text-cyan-300 w-full">
+                        </div>
+                        <button onclick="removeSection(${secIdx})" class="text-slate-500 hover:text-rose-400"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+
+                    <div class="space-y-2">
+                        ${fieldsHtml}
+                    </div>
+
+                    <div class="pt-1 flex gap-1 flex-wrap">
+                        <button onclick="addFieldToSection(${secIdx}, 'progress')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded">+ 進度條</button>
+                        <button onclick="addFieldToSection(${secIdx}, 'hearts')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded">+ 心動評級</button>
+                        <button onclick="addFieldToSection(${secIdx}, 'text')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded">+ 文字標籤</button>
+                        <button onclick="addFieldToSection(${secIdx}, 'foldable')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded">+ 折疊欄位</button>
+                    </div>
+                `;
+                container.appendChild(secBlock);
+            });
+        }
+
+        /* 渲染即時 HUD 預覽卡片 */
+        function renderHUDPreview() {
+            document.getElementById('hud-char-name').innerText = hudData.charName;
+            document.getElementById('hud-char-title').innerText = hudData.charTitle;
+            document.getElementById('hud-char-quote').innerText = hudData.charQuote;
+            document.getElementById('hud-char-name').style.color = hudData.styles.sectionTitle;
+
+            const container = document.getElementById('hud-sections-container');
+            container.innerHTML = '';
+
+            hudData.sections.forEach((sec) => {
+                const secGroup = document.createElement('div');
+                secGroup.className = "space-y-2";
+
+                const secHeader = document.createElement('div');
+                secHeader.className = "flex justify-between items-center cursor-pointer select-none border-b pb-1";
+                secHeader.style.borderColor = "rgba(255,255,255,0.1)";
+                secHeader.onclick = () => {
+                    sec.isCollapsed = !sec.isCollapsed;
+                    renderHUDPreview();
+                };
+
+                secHeader.innerHTML = `
+                    <span class="font-bold text-xs tracking-wider flex items-center gap-1.5" style="color:${hudData.styles.sectionTitle}">
+                        <i class="fa-solid fa-chevron-down text-[10px] transition-transform ${sec.isCollapsed ? '-rotate-90' : ''}"></i>
+                        ${sec.title}
+                    </span>
+                    <span class="text-[10px] opacity-60">點擊收合</span>
+                `;
+                secGroup.appendChild(secHeader);
+
+                if (!sec.isCollapsed) {
+                    const fieldsContainer = document.createElement('div');
+                    fieldsContainer.className = "space-y-2 pt-1 pl-1";
+
+                    sec.fields.forEach(field => {
+                        const item = document.createElement('div');
+                        item.className = "cursor-pointer select-none transition-transform active:scale-[0.99]";
+                        item.onclick = (e) => handleFieldClick(e, field);
+
+                        if (field.type === 'progress') {
+                            const pct = Math.min(100, Math.max(0, (field.val / field.max) * 100));
+                            item.innerHTML = `
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="font-medium text-[11px]" style="color:${hudData.styles.subTitle}">${field.label}</span>
+                                    <span class="font-mono text-[11px]" style="color:${hudData.styles.sectionTitle}">${field.val}/${field.max}</span>
+                                </div>
+                                <div class="w-full h-2 rounded-full overflow-hidden bg-slate-950/80 border border-slate-800">
+                                    <div class="h-full rounded-full transition-all duration-300 liquid-bar" style="width:${pct}%; background-color:${hudData.styles.progress}"></div>
+                                </div>
+                            `;
+                        } else if (field.type === 'hearts') {
+                            let heartsHtml = '';
+                            for (let i = 1; i <= field.max; i++) {
+                                heartsHtml += `<span class="${i <= field.val ? 'opacity-100 scale-100' : 'opacity-30 scale-90'} inline-block transition-transform">❤️</span>`;
+                            }
+                            item.innerHTML = `
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-medium text-[11px]" style="color:${hudData.styles.subTitle}">${field.label}</span>
+                                    <div class="space-x-1">${heartsHtml}</div>
+                                </div>
+                            `;
+                        } else if (field.type === 'text') {
+                            item.innerHTML = `
+                                <div class="flex justify-between items-center text-xs p-1.5 rounded-lg bg-slate-950/40 border border-slate-800/60">
+                                    <span style="color:${hudData.styles.subTitle}">${field.label}</span>
+                                    <span class="font-medium" style="color:${hudData.styles.sectionTitle}">${field.val}</span>
+                                </div>
+                            `;
+                        } else if (field.type === 'foldable') {
+                            item.innerHTML = `
+                                <div class="rounded-lg bg-slate-950/50 border border-slate-800/80 overflow-hidden text-xs">
+                                    <div class="p-1.5 flex justify-between items-center font-medium hover:bg-slate-800/40 transition" style="color:${hudData.styles.subTitle}">
+                                        <span><i class="fa-solid fa-chevron-down mr-1.5 text-[10px] transition-transform ${field.isExpanded ? 'rotate-180' : ''}"></i> ${field.label}</span>
+                                        <span class="text-[10px] opacity-60">展開</span>
+                                    </div>
+                                    <div class="px-2.5 pb-2 pt-1 text-[11px] border-t border-slate-800/40 ${field.isExpanded ? 'block' : 'hidden'}">
+                                        ${field.val}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        fieldsContainer.appendChild(item);
+                    });
+                    secGroup.appendChild(fieldsContainer);
+                }
+
+                container.appendChild(secGroup);
+            });
+
+            renderFrameOverlay();
+            generateAISystemPrompt();
+        }
+
+        /* 點擊特效觸發處理器 */
+        function handleFieldClick(event, field) {
+            if (field.type === 'foldable') {
+                field.isExpanded = !field.isExpanded;
+                renderHUDPreview();
+            }
+
+            if (field.triggerFX === 'heart') {
+                spawnBurstParticle(event.clientX, event.clientY, '❤️');
+                play8BitSFX('heart');
+            } else if (field.triggerFX === 'sparkle') {
+                spawnBurstParticle(event.clientX, event.clientY, '✨');
+                play8BitSFX('sparkle');
+            } else if (field.triggerFX === 'petal') {
+                spawnBurstParticle(event.clientX, event.clientY, '🌸');
+            } else if (field.triggerFX === 'coin') {
+                spawnCoinParticle(event.clientX, event.clientY);
+                play8BitSFX('coin');
+            } else if (field.triggerFX === 'lightning') {
+                spawnBurstParticle(event.clientX, event.clientY, '⚡');
+            } else if (field.triggerFX === 'speech') {
+                triggerSpeechBubble(field.quote || "點擊觸發互動！");
+            }
+        }
+
+        function spawnBurstParticle(x, y, char) {
+            for (let i = 0; i < 5; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'fx-burst-particle';
+                particle.innerText = char;
+                const offsetX = (Math.random() - 0.5) * 45;
+                const offsetY = (Math.random() - 0.5) * 25;
+                particle.style.left = `${x + offsetX}px`;
+                particle.style.top = `${y + offsetY}px`;
+                document.body.appendChild(particle);
+
+                setTimeout(() => particle.remove(), 1200);
+            }
+        }
+
+        function spawnCoinParticle(x, y) {
+            const coin = document.createElement('div');
+            coin.className = 'fx-coin-particle';
+            coin.innerText = '🪙';
+            coin.style.left = `${x}px`;
+            coin.style.top = `${y}px`;
+            document.body.appendChild(coin);
+
+            setTimeout(() => coin.remove(), 900);
+        }
+
+        function triggerSpeechBubble(text) {
+            const bubble = document.getElementById('hud-speech-bubble');
+            document.getElementById('hud-speech-text').innerText = text;
+            bubble.classList.remove('hidden');
+
+            setTimeout(() => {
+                bubble.classList.add('hidden');
+            }, 2500);
+        }
+
+        /* 頭像像素畫處理 */
+        function processAvatarPixel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                rawAvatarImg = new Image();
+                rawAvatarImg.onload = function() {
+                    renderAvatarPixel();
+                };
+                rawAvatarImg.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function renderAvatarPixel() {
+            const res = document.getElementById('avatar-pixel-res').value;
+            if (res === 'none') {
+                hudData.avatarUrl = rawAvatarImg.src;
+                document.getElementById('hud-avatar-img').src = hudData.avatarUrl;
+                return;
+            }
+
+            const canvas = document.getElementById('proc-canvas');
+            const ctx = canvas.getContext('2d');
+            const targetSize = parseInt(res);
+            canvas.width = targetSize;
+            canvas.height = targetSize;
+
+            ctx.drawImage(rawAvatarImg, 0, 0, targetSize, targetSize);
+            hudData.avatarUrl = canvas.toDataURL();
+            document.getElementById('hud-avatar-img').src = hudData.avatarUrl;
+            document.getElementById('hud-avatar-img').classList.add('pixelated');
+        }
+
+        /* 飾品圖片轉像素處理器 (FEATURE 1) */
+        function processAccessoryImagePixel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('proc-canvas');
+                    const ctx = canvas.getContext('2d');
+                    const res = parseInt(document.getElementById('acc-pixel-res').value);
+                    canvas.width = res;
+                    canvas.height = res;
+
+                    ctx.drawImage(img, 0, 0, res, res);
+                    const pixelatedUrl = canvas.toDataURL();
+
+                    hudData.accessories.push({
+                        id: `acc-${Date.now()}`,
+                        icon: null,
+                        imgUrl: pixelatedUrl,
+                        x: 80,
+                        y: 10
+                    });
+
+                    renderAccessoriesEditor();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function renderAccessoriesEditor() {
+            const list = document.getElementById('accessories-list');
+            list.innerHTML = '';
+            hudData.accessories.forEach((acc, idx) => {
+                const item = document.createElement('div');
+                item.className = "bg-slate-900 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs";
+                
+                let iconDisplay = acc.imgUrl 
+                    ? `<img src="${acc.imgUrl}" class="w-7 h-7 pixelated object-contain border border-slate-700 rounded">`
+                    : `<input type="text" value="${acc.icon}" onchange="hudData.accessories[${idx}].icon=this.value; renderAccessories();" class="w-12 bg-slate-950 border border-slate-700 rounded text-center">`;
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        ${iconDisplay}
+                        <span class="text-[10px] text-slate-400 font-mono">X:${acc.x}% Y:${acc.y}%</span>
+                    </div>
+                    <button onclick="hudData.accessories.splice(${idx}, 1); renderAccessoriesEditor(); renderAccessories();" class="text-rose-400 text-xs"><i class="fa-solid fa-trash"></i></button>
+                `;
+                list.appendChild(item);
+            });
+            renderAccessories();
+        }
+
+        function addAccessoryItem() {
+            hudData.accessories.push({ id: `acc-${Date.now()}`, icon: "✨", imgUrl: null, x: 10, y: 10 });
+            renderAccessoriesEditor();
+        }
+
+        function renderAccessories() {
+            const layer = document.getElementById('hud-accessories-layer');
+            layer.innerHTML = '';
+            hudData.accessories.forEach(acc => {
+                const el = document.createElement('div');
+                el.className = "absolute pointer-events-none select-none anim-pulse";
+                el.style.left = `${acc.x}%`;
+                el.style.top = `${acc.y}%`;
+
+                if (acc.imgUrl) {
+                    el.innerHTML = `<img src="${acc.imgUrl}" class="w-8 h-8 pixelated object-contain drop-shadow">`;
+                } else {
+                    el.style.fontSize = "1.25rem";
+                    el.innerText = acc.icon;
+                }
+                layer.appendChild(el);
+            });
+        }
+
+        function renderFrameOverlay() {
+            const overlay = document.getElementById('hud-frame-overlay');
+            overlay.innerHTML = '';
+            if (hudData.frame === 'cyberpunk') {
+                overlay.innerHTML = `
+                    <div class="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2" style="border-color:${hudData.styles.border}"></div>
+                    <div class="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2" style="border-color:${hudData.styles.border}"></div>
+                    <div class="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2" style="border-color:${hudData.styles.border}"></div>
+                    <div class="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2" style="border-color:${hudData.styles.border}"></div>
+                `;
+            }
+        }
+
+        function triggerReactiveState(state) {
+            const card = document.getElementById('hud-card');
+            card.classList.remove('anim-glitch', 'anim-heartbeat');
+            if (state === 'glitch') {
+                card.classList.add('anim-glitch');
+            } else if (state === 'low-hp') {
+                card.classList.add('anim-heartbeat');
+            } else if (state === 'love-burst') {
+                spawnBurstParticle(window.innerWidth / 2, window.innerHeight / 2, '💖');
+            }
+        }
+
+        function generateAISystemPrompt() {
+            const prompt = `[System Prompt: Status Bar HUD JSON Output]
+Please continuously manage the character's status. Output an updated HUD JSON block at the end of every reply:
+\`\`\`hud
+{
+  "char": "${hudData.charName}",
+  "sections": ${JSON.stringify(hudData.sections, null, 2)}
+}
+\`\`\``;
+            document.getElementById('ai-system-prompt').value = prompt;
+        }
+
+        function openExportModal() {
+            const cardHtml = document.getElementById('hud-card').outerHTML;
+            document.getElementById('export-code-area').value = `<!-- AI Character HUD -->\n${cardHtml}`;
+            document.getElementById('export-modal').classList.remove('hidden');
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').classList.add('hidden');
+        }
+
+        function copyToClipboard(id) {
+            const textarea = document.getElementById(id);
+            textarea.select();
+            document.execCommand('copy');
+            alert('已成功複製至剪貼簿！');
+        }
+
+        function downloadPNG() {
+            const target = document.getElementById('hud-card');
+            html2canvas(target, { backgroundColor: null, scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `character-hud-${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+    </script>
+</body>
+</html>
